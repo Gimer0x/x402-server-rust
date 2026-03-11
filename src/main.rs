@@ -1,27 +1,37 @@
-use alloy_primitives::address;
-use axum::{Router, routing::get};
-use axum::response::IntoResponse;
+use alloy_primitives::{Address};
+use axum::{Router, routing::{get, post}};
 use x402_axum::X402Middleware;
 use x402_chain_eip155::{KnownNetworkEip155, V1Eip155Exact};
 use x402_types::networks::USDC;
 use tokio::net::TcpListener;
-use http::StatusCode;
+use dotenvy::var;
 
-async fn my_handler() -> impl IntoResponse {
-    (StatusCode::OK, "This is VIP content!")
-}
+mod controllers;
+use controllers::handlers::{my_handler, decoder};
 
 #[tokio::main]
 async fn main() {
-    let x402 = X402Middleware::new("https://facilitator.x402.rs");
+    dotenvy::dotenv().ok();
 
-    let app: Router = Router::new().route(
-        "/protected",
-        get(my_handler).layer(
+    let facilitator_url = var("FACILITATOR_URL").unwrap();
+    let price = var("PRICE").unwrap().parse::<f64>().unwrap();
+
+    let x402 = X402Middleware::new(facilitator_url.as_str());
+
+    
+    let receiver_address:Address = var("RECEIVER_ADDRESS")
+        .unwrap()
+        .parse()
+        .expect("RECEIVER_ADDRESS must be a valid Ethereum address");
+
+    let app: Router = Router::new()
+        .route("/explain",get(my_handler))
+        .route("/summary/{tx_hash}",post(decoder))
+        .layer(
             x402.with_price_tag(V1Eip155Exact::price_tag(
-                address!("0x0d2Dc4E9ebc1465E86Fdf6ab18377CB82eCf7548"),
-                USDC::base_sepolia().parse("0.01").unwrap(),
-            ))
+                receiver_address,
+                USDC::base_sepolia().parse(price).unwrap(),
+            )
         ),
     );
     let app = app.into_make_service();
